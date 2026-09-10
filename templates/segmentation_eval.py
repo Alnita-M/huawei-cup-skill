@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 """分割评估骨架：逐图指标 + 分布分位数 + 批级/逐图双口径 + 最差样本三联图
-（华为杯解题 Skill v1.2 · STEP E2/E3，[E]）
+（华为杯解题 Skill v1.4 · STEP E2/E3，[E]）
 
 【为什么必须这样评估】
 ① 主指标固定 **Dice + IoU**（附 Precision / Recall）；**PA 只作辅证**——
-   背景占比 99%+ 时 PA 失真：实测 crack-seg PA 0.6566 vs Dice 0.7377 严重背离。
+   背景占比约 98% 时 PA 看着「接近完美」却完全掩盖细裂缝漏检：实测 crack-seg
+   **PA 0.9899 vs Dice 0.7377**（注：实测脚本原 PA 公式分母口径写错曾得 0.6566，
+   修正后 0.9899——公式本身与聚合层级都必须写清，这正是本模板要防的坑）。
 ② 必须声明**聚合层级**：批级（先累积全局 TP/FP/FN 再算一个数）vs 逐图（每图算完再平均）——
-   两者数值与含义都不同，不声明则横向对比失效（实测批级 Dice 0.7377）。
-③ 只报均值会掩盖系统性失效：实测最差样本 Dice 0.111（阴影/剥落粗块区）被均值完全掩盖 →
+   两者数值与含义都不同，不声明则横向对比失效（实测批级 Dice 0.7377 vs 逐图 0.7196，差 1.8 个百分点）。
+③ 只报均值会掩盖系统性失效：实测 112 张中 **6 张 Dice <0.4、最差 2 张 Dice 0.000（完全漏检）**、
+   第 3 张 0.111（阴影/剥落粗块区）——全被均值 0.72–0.74 掩盖 →
    必须交付逐图分布（分位数）+ 最差样本三联图归因。
 
 用法：
@@ -166,9 +169,10 @@ def main():
     print(json.dumps({"per_image": per_img, "batch_level": batch}, ensure_ascii=False, indent=1))
 
     # 最差样本三联图
+    # 复用一份配对映射：原先每张最差图各调用一次 _pair()，每次都重新 glob 全目录 → O(k·n)
+    pairmap = {s: (p, g) for s, p, g in _pair(args.pred, args.gt)}
     for i, r in enumerate(worst_samples(recs, args.worst)):
-        pp = next(p for s, p, g in _pair(args.pred, args.gt) if s == r["name"])
-        gp = next(g for s, p, g in _pair(args.pred, args.gt) if s == r["name"])
+        pp, gp = pairmap[r["name"]]
         if args.img:
             ip = next((c for c in (os.path.join(args.img, r["name"] + e)
                                    for e in (".jpg", ".png", ".jpeg")) if os.path.exists(c)), None)

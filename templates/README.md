@@ -1,4 +1,4 @@
-# 华为杯解题 Skill v1.2 · 代码模板库索引
+# 华为杯解题 Skill v1.4 · 代码模板库索引
 
 > 生成日期：2026-09-06 ｜ 原料：题库/蒸馏集 11 题《独立解答.md》+《差距分析.md》
 > （v0.9 增补盲测四题 H01–H04 模板，v1.0 增补实战四题 F01–F04 模板，
@@ -87,7 +87,8 @@
 ## 四、盲测/实战迁移提示（模板→真题）
 
 - 模板函数名即语义：导入后按 docstring 补全业务分支即可，不必重写算法主体。
-- 十三个 .py 的 import 均标注「按需裁剪」：默认只用 numpy/scipy/sklearn，
-  cv2/statsmodels/imblearn 出现在局部 import，缺失时降级路径已在注释给出。
+- **顶层依赖**：仅 `numpy`；`polygon_to_mask.py` 与 `segmentation_eval.py` 另需 **Pillow**（顶层 import）。
+- **局部依赖**（各模板按需 import，未装则 ImportError）：scipy、scikit-image、opencv-python(cv2)、scikit-learn、xgboost、statsmodels、imbalanced-learn、matplotlib。
+- **已兜底**：全仓仅 4 处真实 `try/except ImportError` 降级路径（注释中标「降级」处）；其余局部依赖缺失会直接 ImportError——用前请装齐，或自行加 try/except。
 - 溯源题号用于论文素材引用（如「本方法见 2018D 独立解答 §4.2」），
   实战题（盲测集/实战集）不得引用原料文件本身，只复用模板骨架。

@@ -49,7 +49,7 @@ P = float(args.period)
 def feature_response(gray):
     """占位实现：光照归一化 + 线状响应。
     实际题面应按目标形态替换（本次 2025C 用双向多尺度 Frangi + 暗带加权，见
-    G:\\AgentZone\\huawei2025c\\q1_sine_hough.py 的 response()）。"""
+    见 CHANGELOG.md v1.3『实测数据存档』所列脚本的 response()）。"""
     bg = cv2.morphologyEx(gray, cv2.MORPH_CLOSE,
                           cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (61, 61))).astype(np.float32) + 1e-6
     norm = np.clip(gray.astype(np.float32) / bg, 0, 2.0)

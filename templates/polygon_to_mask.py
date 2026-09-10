@@ -101,12 +101,20 @@ def polygon_to_mask(polygons, W, H, mode="fill", stroke_width=3):
 # ---------------------------------------------------------------- 一致性检查
 
 def coverage_stats(pairs, mode="fill", stroke_width=3, limit=None):
-    """遍历 (image_path, label_path) 对，统计正样本占比与单图 mask 覆盖率。
+    """遍历 (image_path, label_path) 对，统计 mask 覆盖率（逐图）与正样本像素占比（全局）。
+
+    **两种口径不可混用**（图尺寸不一致时两者不等价）：
+      coverage_pct_*                    逐图口径：先算每张图的正样本占比，再取均值/分位数
+                                        （衡量"单张图里标注占多少"，用于判断 loss/阈值是否需要不平衡处理）
+      positive_pixel_ratio_pct_global   全局口径：Σ正样本像素 / Σ总像素
+                                        （衡量"整个数据集的正样本比例"，是不平衡程度的准确刻画）
+    仅统计**有标注**的图（空标签图单独计数、不计入分母）。
 
     返回 dict：n_images / n_empty_labels（无标注图）/ n_empty_masks（有标注但 mask 为空，
-    说明标注行格式异常或被点数过滤）/ mask 覆盖率分位数 / 正样本像素占比。
+    说明标注行格式异常或被点数过滤）/ 覆盖率分位数 / 两种占比口径。
     """
     rows, empty_lbl, empty_msk = [], 0, 0
+    sum_pos, sum_tot = 0, 0
     for i, (ip, lp) in enumerate(pairs):
         if limit and i >= limit:
             break
@@ -120,6 +128,8 @@ def coverage_stats(pairs, mode="fill", stroke_width=3, limit=None):
         cov = float(m.mean())
         if cov == 0.0:
             empty_msk += 1
+        sum_pos += int(m.sum())
+        sum_tot += int(m.size)
         rows.append(cov)
     a = np.asarray(rows, dtype=np.float64)
     pos = a * 100.0  # 单图覆盖率（%）
@@ -132,7 +142,7 @@ def coverage_stats(pairs, mode="fill", stroke_width=3, limit=None):
         "coverage_pct_p10": float(np.percentile(pos, 10)) if a.size else 0.0,
         "coverage_pct_p50": float(np.percentile(pos, 50)) if a.size else 0.0,
         "coverage_pct_p90": float(np.percentile(pos, 90)) if a.size else 0.0,
-        "positive_pixel_ratio_pct": float(pos.mean()) if a.size else 0.0,
+        "positive_pixel_ratio_pct_global": round(sum_pos / sum_tot * 100.0, 4) if sum_tot else 0.0,
         "mode": mode,
         "stroke_width": stroke_width if mode == "stroke" else None,
     }
@@ -168,9 +178,11 @@ def main():
     # 口径漂移告警：fill 与 stroke 差异过大时提示
     if args.mode == "fill":
         st2 = coverage_stats(pairs, mode="stroke", stroke_width=args.stroke, limit=args.limit)
-        d = st2["positive_pixel_ratio_pct"] - st["positive_pixel_ratio_pct"]
-        print(f"[口径对比] fill vs stroke({args.stroke}px) 正样本占比差 {d:+.3f} 个百分点；"
-              f"报告方法节必须声明采用的口径。")
+        d_g = st2["positive_pixel_ratio_pct_global"] - st["positive_pixel_ratio_pct_global"]
+        d_c = st2["coverage_pct_mean"] - st["coverage_pct_mean"]
+        print(f"[口径对比] fill vs stroke({args.stroke}px)："
+              f"全局占比差 {d_g:+.3f} 个百分点、逐图覆盖率均值差 {d_c:+.3f} 个百分点；"
+              f"报告方法节必须声明采用的口径（两种口径不可混用）。")
 
 
 if __name__ == "__main__":
