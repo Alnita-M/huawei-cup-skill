@@ -130,6 +130,23 @@ def render(gray, resp, picked, x, band, resp_ratio):
     return m
 
 
+def imwrite_u(path, img):
+    """Unicode / 中文路径安全保存（陷阱库 T63 的落点实现）。
+
+    `cv2.imwrite` 对含非 ASCII 的路径**返回 False 且不抛异常**——批量可视化会静默丢失，
+    而日志照常打印「已保存」，直到核对产物清单才发现全是空目录。
+    故改用 `imencode(...)[1].tofile(path)`，并在落盘后**校验文件存在且非空**（不信返回值、只看产物）。
+    """
+    ext = os.path.splitext(path)[1] or ".png"
+    ok, buf = cv2.imencode(ext, img)
+    if not ok:
+        raise IOError("cv2.imencode 失败: %s" % path)
+    buf.tofile(path)
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        raise IOError("落盘校验失败（文件缺失或为空）: %s" % path)
+    return True
+
+
 files = sorted(f for f in os.listdir(args.data) if f.lower().endswith((".jpg", ".jpeg", ".png")))
 table = []
 for f in files:
@@ -141,10 +158,10 @@ for f in files:
     m = render(gray, resp, picked, x, args.mask_band, args.resp_ratio)
     stem = os.path.splitext(f)[0]
     # 题目常见要求：目标像素=黑、其他=白；如需其他约定改此处
-    cv2.imwrite(os.path.join(args.out, stem + "_result.png"), np.where(m > 0, 0, 255).astype(np.uint8))
+    imwrite_u(os.path.join(args.out, stem + "_result.png"), np.where(m > 0, 0, 255).astype(np.uint8))
     vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
     vis[m > 0] = (0, 0, 255)
-    cv2.imwrite(os.path.join(args.out, stem + "_vis.png"), vis)
+    imwrite_u(os.path.join(args.out, stem + "_vis.png"), vis)
     for k, (s, R, b, C) in enumerate(picked, 1):
         row = dict(image=stem, id=k, score=round(s, 4), R_px=round(R, 1), beta_rad=round(b, 4),
                    C_px=round(C, 1), P_px=P, beta_deg=round(np.degrees(b) % 360, 1), threshold=round(thr or 0, 4))

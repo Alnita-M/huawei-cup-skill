@@ -8,9 +8,11 @@
   3. segmentation_eval.py 端到端：用上一步产物当 GT，人为制造偏移（FP/FN）与全空预测
      → 断言逐图/批级双口径、最差样本三联图落盘
   4. 一致性：批级 Dice 应高于最差图的逐图 Dice（口径分层可复现）
+  5. 结构断言：调用 audit_assets.py 对账（决策点/子条件/陷阱/模板计数 + 跨文件一致）
+     —— 把 v1.4 以来三次失效的「文档-计数脱节」变成 CI 检查
 
 运行：
-  PYTHONPATH= "C:/Users/18107/anaconda3/envs/pytorch/python.exe" tests/smoke_test.py
+  python tests/smoke_test.py
   （需 numpy + Pillow；其余模板的局部依赖不参与本测试）
 """
 import ast
@@ -64,9 +66,11 @@ def check(cond, msg):
 
 
 # ---------- 1. AST 语法检查 ----------
-step("1/4 AST 语法检查（templates/*.py）")
+step("1/5 AST 语法检查（templates/*.py）")
 tmpls = sorted(glob.glob(os.path.join(TPL, "*.py")))
-check(len(tmpls) >= 14, "模板数量 %d（应 ≥14）" % len(tmpls))
+# 精确计数不在此硬编码——交由步骤 5 的 audit_assets.py 单源对账，
+# 避免「同一个数字写在两处、改一处忘一处」（v1.4 起计数三次失效的根因）。
+check(len(tmpls) > 0, "发现 %d 个模板（精确计数见步骤 5）" % len(tmpls))
 for f in tmpls:
     try:
         ast.parse(open(f, encoding="utf-8").read(), filename=f)
@@ -75,7 +79,7 @@ for f in tmpls:
 check(not [f for f in FAILS if "语法错误" in f], "全部 %d 个模板 AST 解析通过" % len(tmpls))
 
 # ---------- 2. polygon_to_mask 端到端 ----------
-step("2/4 polygon_to_mask.py 端到端（合成图 + YOLO 多边形 + 1 张空标签）")
+step("2/5 polygon_to_mask.py 端到端（合成图 + YOLO 多边形 + 1 张空标签）")
 tmp = tempfile.mkdtemp(prefix="hwcup_smoke_")
 img_dir = os.path.join(tmp, "images")
 lbl_dir = os.path.join(tmp, "labels")
@@ -117,7 +121,7 @@ if out:
     check(0 < g < 100, "全局正样本占比在 (0,100) 内（实际 %.4f）" % g)
 
 # ---------- 3. segmentation_eval 端到端 ----------
-step("3/4 segmentation_eval.py 端到端（人为 FP/FN + 全空预测 → 双口径 + 三联图）")
+step("3/5 segmentation_eval.py 端到端（人为 FP/FN + 全空预测 → 双口径 + 三联图）")
 run([PY, os.path.join(TPL, "polygon_to_mask.py"), "--images", img_dir, "--labels", lbl_dir,
      "--mode", "fill", "--save", gt_dir])
 gts = sorted(glob.glob(os.path.join(gt_dir, "*.png")))
@@ -156,17 +160,31 @@ if gts:
     check(len(shots) >= 1, "最差样本三联图已落盘（%d 张）" % len(shots))
 
 # ---------- 4. 一致性 ----------
-step("4/4 口径分层可复现性")
+step("4/5 口径分层可复现性")
 if os.path.exists(os.path.join(tmp, "metrics_per_image.json")):
     J = json.load(open(os.path.join(tmp, "metrics_per_image.json"), encoding="utf-8"))
     b, p = J["batch_level"]["dice"], J["per_image"]["dice_mean"]
     check(abs(b - p) > 1e-9 or True, "批级 %.4f 与逐图 %.4f 已分别报出（口径差异可见）" % (b, p))
 
 shutil.rmtree(tmp, ignore_errors=True)
+
+# ---------- 5. 结构断言（资产清点对账） ----------
+step("5/5 结构断言（audit_assets.py 对账）")
+audit = os.path.join(os.path.dirname(os.path.abspath(__file__)), "audit_assets.py")
+if os.path.exists(audit):
+    p = subprocess.run([PY, audit], capture_output=True, text=True, encoding="utf-8")
+    tail = (p.stdout or "").strip().splitlines()
+    for line in tail:
+        print("   ", line)
+    check(p.returncode == 0,
+          "资产清点一致（决策点/子条件/陷阱/模板 + 跨文件）")
+else:
+    check(False, "缺少 audit_assets.py —— SKILL.md 头部声称的清点脚本必须存在")
+
 print("\n" + "=" * 56)
 if FAILS:
     print("冒烟测试失败 %d 项：" % len(FAILS))
     for f in FAILS:
         print("  -", f)
     sys.exit(1)
-print("全部通过：AST %d 模板 + 两分割模板端到端" % len(tmpls))
+print("全部通过：AST %d 模板 + 两分割模板端到端 + 资产清点" % len(tmpls))
